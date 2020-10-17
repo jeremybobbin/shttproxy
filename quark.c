@@ -23,10 +23,13 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <netinet/in.h>
 
 #include "arg.h"
 
-char *argv0;
+#define HEADER_MAX 4096
+size_t hlen;
+char *argv0, header[HEADER_MAX];
 
 #include "config.h"
 
@@ -96,6 +99,9 @@ static char *status_str[] = {
 	[S_INTERNAL_SERVER_ERROR] = "Internal Server Error",
 	[S_VERSION_NOT_SUPPORTED] = "HTTP Version not supported",
 };
+
+char **hosts;
+int numhosts;
 
 long long strtonum(const char *, long long, long long, const char **);
 
@@ -171,9 +177,9 @@ sendstatus(int fd, enum status s)
 static int
 getrequest(int fd, struct request *r)
 {
-	size_t hlen, i, mlen;
+	size_t i, mlen;
 	ssize_t off;
-	char h[HEADER_MAX], *p, *q;
+	char *p, *q;
 
 	/* empty all fields */
 	memset(r, 0, sizeof(*r));
@@ -182,16 +188,16 @@ getrequest(int fd, struct request *r)
 	 * receive header
 	 */
 	for (hlen = 0; ;) {
-		if ((off = read(fd, h + hlen, sizeof(h) - hlen)) < 0) {
+		if ((off = read(fd, header + hlen, sizeof(header) - hlen)) < 0) {
 			return sendstatus(fd, S_REQUEST_TIMEOUT);
 		} else if (off == 0) {
 			break;
 		}
 		hlen += off;
-		if (hlen >= 4 && !memcmp(h + hlen - 4, "\r\n\r\n", 4)) {
+		if (hlen >= 4 && !memcmp(header + hlen - 4, "\r\n\r\n", 4)) {
 			break;
 		}
-		if (hlen == sizeof(h)) {
+		if (hlen == sizeof(header)) {
 			return sendstatus(fd, S_REQUEST_TOO_LARGE);
 		}
 	}
@@ -200,10 +206,10 @@ getrequest(int fd, struct request *r)
 	if (hlen < 2) {
 		return sendstatus(fd, S_BAD_REQUEST);
 	}
-	hlen -= 2;
+	/* hlen -= 2; */
 
 	/* null-terminate the header */
-	h[hlen] = '\0';
+	header[hlen] = '\0';
 
 	/*
 	 * parse request line
@@ -212,7 +218,7 @@ getrequest(int fd, struct request *r)
 	/* METHOD */
 	for (i = 0; i < NUM_REQ_METHODS; i++) {
 		mlen = strlen(req_method_str[i]);
-		if (!strncmp(req_method_str[i], h, mlen)) {
+		if (!strncmp(req_method_str[i], header, mlen)) {
 			r->method = i;
 			break;
 		}
@@ -222,18 +228,18 @@ getrequest(int fd, struct request *r)
 	}
 
 	/* a single space must follow the method */
-	if (h[mlen] != ' ') {
+	if (header[mlen] != ' ') {
 		return sendstatus(fd, S_BAD_REQUEST);
 	}
 
 	/* basis for next step */
-	p = h + mlen + 1;
+	p = header + mlen + 1;
 
 	/* TARGET */
 	if (!(q = strchr(p, ' '))) {
 		return sendstatus(fd, S_BAD_REQUEST);
 	}
-	*q = '\0';
+	/*q = '\0';*/
 	if (q - p + 1 > PATH_MAX) {
 		return sendstatus(fd, S_REQUEST_TOO_LARGE);
 	}
@@ -298,7 +304,7 @@ getrequest(int fd, struct request *r)
 		if (!(q = strstr(p, "\r\n"))) {
 			return sendstatus(fd, S_BAD_REQUEST);
 		}
-		*q = '\0';
+		/* *q = '\0'; */
 		if (q - p + 1 > FIELD_MAX) {
 			return sendstatus(fd, S_REQUEST_TOO_LARGE);
 		}
@@ -724,6 +730,135 @@ sendresponse(int fd, struct request *r)
 	return sendfile(fd, realtarget, r, &st, mime, lower, upper);
 }
 
+int hostcmp(char *s, char *t)
+{
+	for (; *s; s++, t++) {
+		if (*s == *t) {
+			continue;
+		}
+		if (*s == '@') {
+			if (*t == '.' || *t == '/' || *t == '\0' || *t == ':') {
+				/*
+				 * ./hosttp www@9000
+				 * Host: www.jer.cx
+				 *
+				 * ./hosttp jer@9000
+				 * Host: jer.cx
+				 */
+				return 0;
+			} else {
+				/*
+				 * ./hosttp www@9000
+				 * Host: wwwaaaa.luigi.co
+				 */
+				break;
+			}
+		}
+	}
+	return *s - *t;
+}
+
+int
+open_remote_host(char *host, int port)
+{
+	struct sockaddr_in rem_addr;
+	int len, fl, s, x;
+	struct hostent *H;
+	int on = 1;
+
+	H = gethostbyname(host);
+
+	if (!H)
+		return (-2);
+
+	len = sizeof(rem_addr);
+
+	s = socket(AF_INET, SOCK_STREAM, 0);
+	if (s < 0)
+		return s;
+
+	setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &on, 4);
+
+	len = sizeof(rem_addr);
+	memset(&rem_addr, '\0', len);
+	rem_addr.sin_family = AF_INET;
+	memcpy(&rem_addr.sin_addr, H->h_addr, H->h_length);
+	rem_addr.sin_port = htons(port);
+	if (x = connect(s, (struct sockaddr *) &rem_addr, len)) {
+		close(s);
+		return x;
+	}
+	if ((fl = fcntl(s, F_GETFL, 0)) < 0) {
+		fprintf(stderr, "%s: fcntl GETFL: %s\n", argv0, strerror(errno));
+		exit(1);
+	}
+	if (fcntl(s, F_SETFL, fl | O_NONBLOCK) < 0) {
+		fprintf(stderr, "%s: fcntl SETFL: %s\n", argv0, strerror(errno));
+		exit(1);
+	}
+
+	return s;
+}
+
+
+static enum status
+proxy(int fd, struct request *r)
+{
+	struct in6_addr res;
+	struct stat st;
+	struct tm tm;
+	size_t len, i, bread, bwritten;
+	off_t lower, upper;
+	int sfd, hasport, ipv6host, port;
+	static char realtarget[PATH_MAX], tmptarget[PATH_MAX], t[TIMESTAMP_LEN], buf[BUFSIZ];
+	const char *err;
+	char *p;
+
+
+	if (r->field[REQ_HOST] == NULL) {
+		return sendstatus(fd, S_BAD_REQUEST);
+	}
+
+	for (i = 0; i < numhosts; i++) {
+		if (hostcmp(hosts[i], r->field[REQ_HOST]) == 0) {
+			p = strchr(hosts[i], '@') + 1;
+			if (r->field[REQ_HOST] == NULL || (port = atoi(p)) < 0) {
+				return sendstatus(fd, S_BAD_REQUEST);
+			}
+		}
+	}
+
+	if ((sfd = open_remote_host("localhost", port)) < 0) {
+		return sendstatus(fd, S_INTERNAL_SERVER_ERROR);
+	}
+
+	p = header;
+	while (hlen > 0) {
+		if ((bwritten = write(sfd, p, hlen)) <= 0)
+			return sendstatus(fd, S_INTERNAL_SERVER_ERROR);
+		hlen -= bwritten;
+		p += bwritten;
+	}
+
+	while (bread = read(sfd, buf, sizeof(buf))) {
+		if (bread < 0) {
+			return S_INTERNAL_SERVER_ERROR;
+		}
+		p = buf;
+		while (bread > 0) {
+			bwritten = write(fd, p, bread);
+			if (bwritten <= 0) {
+				return S_REQUEST_TIMEOUT;
+			}
+			bread -= bwritten;
+			p += bwritten;
+		}
+	}
+	close(fd);
+	close(sfd);
+	return 200;
+}
+
 static void
 serve(int insock)
 {
@@ -770,7 +905,7 @@ serve(int insock)
 
 			/* handle request */
 			if (!(status = getrequest(infd, &r))) {
-				status = sendresponse(infd, &r);
+				status = proxy(infd, &r);
 			}
 
 			/* write output to log */
@@ -893,7 +1028,7 @@ static void
 usage(void)
 {
 	die("usage: %s [-v] [[[-h host] [-p port]] | [-U udsocket]] "
-	    "[-d dir] [-l] [-L] [-u user] [-g group]\n", argv0);
+	    "[-d dir] [-l] [-L]\n", argv0);
 }
 
 int
@@ -909,9 +1044,6 @@ main(int argc, char *argv[])
 	case 'd':
 		servedir = EARGF(usage());
 		break;
-	case 'g':
-		group = EARGF(usage());
-		break;
 	case 'h':
 		host = EARGF(usage());
 		break;
@@ -924,9 +1056,6 @@ main(int argc, char *argv[])
 	case 'p':
 		port = EARGF(usage());
 		break;
-	case 'u':
-		user = EARGF(usage());
-		break;
 	case 'U':
 		udsname = EARGF(usage());
 		break;
@@ -937,8 +1066,18 @@ main(int argc, char *argv[])
 		usage();
 	} ARGEND
 
-	if (argc) {
+	if (argc < 1) {
 		usage();
+	}
+
+	hosts = argv;
+	numhosts = argc;
+
+	for (; argc > 0; argc--, argv++) {
+		if (strchr(*argv, '@') == NULL) {
+			fprintf(stderr, "%s: '%s' missing '@'\n", argv0, *argv);
+			exit(1);
+		}
 	}
 
 	/* reap children automatically */
@@ -956,42 +1095,12 @@ main(int argc, char *argv[])
 		return 1;
 	}
 
-	/* validate user and group */
-	errno = 0;
-	if (user && !(pwd = getpwnam(user))) {
-		die("%s: invalid user %s\n", argv0, user);
-	}
-	errno = 0;
-	if (group && !(grp = getgrnam(group))) {
-		die("%s: invalid group %s\n", argv0, group);
-	}
-
 	/* bind socket */
 	insock = udsname ? getusock(udsname) : getipsock();
 
 	/* chroot */
-	if (chdir(servedir) < 0) {
+	if (servedir && chdir(servedir) < 0) {
 		die("%s: chdir %s: %s\n", argv0, servedir, strerror(errno));
-	}
-	if (chroot(".") < 0) {
-		die("%s: chroot .: %s\n", argv0, strerror(errno));
-	}
-
-	/* drop root */
-	if (grp && setgroups(1, &(grp->gr_gid)) < 0) {
-		die("%s: setgroups: %s\n", argv0, strerror(errno));
-	}
-	if (grp && setgid(grp->gr_gid) < 0) {
-		die("%s: setgid: %s\n", argv0, strerror(errno));
-	}
-	if (pwd && setuid(pwd->pw_uid) < 0) {
-		die("%s: setuid: %s\n", argv0, strerror(errno));
-	}
-	if (getuid() == 0) {
-		die("%s: won't run as root user\n", argv0);
-	}
-	if (getgid() == 0) {
-		die("%s: won't run as root group\n", argv0);
 	}
 
 	serve(insock);
