@@ -298,28 +298,24 @@ getrequest(int fd, struct request *r)
 
 int hostcmp(char *s, char *t)
 {
-	for (; *s; s++, t++) {
-		if (*s == *t) {
-			continue;
+	for (; *s && *t; s++, t++)
+		if (*s != *t)
+			break;
+	if (*s == '@') {
+		if (*t == '.' || *t == '/' || *t == '\0' || *t == ':') {
+			/*
+			 * ./hosttp www@9000
+			 * Host: www.jer.cx
+			 *
+			 * ./hosttp jer@9000
+			 * Host: jer.cx
+			 */
+			return 0;
 		}
-		if (*s == '@') {
-			if (*t == '.' || *t == '/' || *t == '\0' || *t == ':') {
-				/*
-				 * ./hosttp www@9000
-				 * Host: www.jer.cx
-				 *
-				 * ./hosttp jer@9000
-				 * Host: jer.cx
-				 */
-				return 0;
-			} else {
-				/*
-				 * ./hosttp www@9000
-				 * Host: wwwaaaa.luigi.co
-				 */
-				break;
-			}
-		}
+		/*
+		 * ./hosttp www@9000
+		 * Host: wwwaaaa.luigi.co
+		 */
 	}
 	return *s - *t;
 }
