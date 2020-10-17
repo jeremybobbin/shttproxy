@@ -1,36 +1,36 @@
 # See LICENSE file for copyright and license details
-# quark - simple web server
+# shttproxy - simple web server
 .POSIX:
 
 include config.mk
 
-all: quark
+all: shttproxy
 
-quark: quark.c arg.h config.h config.mk
+shttproxy: quark.c arg.h config.h config.mk
 	$(CC) -o $@ $(CPPFLAGS) $(CFLAGS) quark.c $(LDFLAGS)
 
 config.h:
 	cp config.def.h $@
 
 clean:
-	rm -f quark
+	rm -f shttproxy
 
 dist:
-	rm -rf "quark-$(VERSION)"
-	mkdir -p "quark-$(VERSION)"
-	cp -R LICENSE Makefile arg.h config.def.h config.mk quark.1 \
-		quark.c "quark-$(VERSION)"
-	tar -cf - "quark-$(VERSION)" | gzip -c > "quark-$(VERSION).tar.gz"
-	rm -rf "quark-$(VERSION)"
+	rm -rf "shttproxy-$(VERSION)"
+	mkdir -p "shttproxy-$(VERSION)"
+	cp -R LICENSE Makefile arg.h config.def.h config.mk shttproxy.1 \
+		shttproxy.c "shttproxy-$(VERSION)"
+	tar -cf - "shttproxy-$(VERSION)" | gzip -c > "shttproxy-$(VERSION).tar.gz"
+	rm -rf "shttproxy-$(VERSION)"
 
 install: all
 	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
-	cp -f quark "$(DESTDIR)$(PREFIX)/bin"
-	chmod 755 "$(DESTDIR)$(PREFIX)/bin/quark"
+	cp -f shttproxy "$(DESTDIR)$(PREFIX)/bin"
+	chmod 755 "$(DESTDIR)$(PREFIX)/bin/shttproxy"
 	mkdir -p "$(DESTDIR)$(MANPREFIX)/man1"
-	cp quark.1 "$(DESTDIR)$(MANPREFIX)/man1/quark.1"
-	chmod 644 "$(DESTDIR)$(MANPREFIX)/man1/quark.1"
+	cp shttproxy.1 "$(DESTDIR)$(MANPREFIX)/man1/shttproxy.1"
+	chmod 644 "$(DESTDIR)$(MANPREFIX)/man1/shttproxy.1"
 
 uninstall:
-	rm -f "$(DESTDIR)$(PREFIX)/bin/quark"
-	rm -f "$(DESTDIR)$(MANPREFIX)/man1/quark.1"
+	rm -f "$(DESTDIR)$(PREFIX)/bin/shttproxy"
+	rm -f "$(DESTDIR)$(MANPREFIX)/man1/shttproxy.1"

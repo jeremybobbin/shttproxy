@@ -1,4 +1,4 @@
-# quark version
+# shttproxy version
 VERSION = 0
 
 # Customize below to fit your system

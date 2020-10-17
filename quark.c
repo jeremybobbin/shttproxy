@@ -650,7 +650,7 @@ main(int argc, char *argv[])
 		udsname = EARGF(usage());
 		break;
 	case 'v':
-		fputs("quark-"VERSION"\n", stderr);
+		fputs("shttproxy-"VERSION"\n", stderr);
 		return 0;
 	default:
 		usage();
