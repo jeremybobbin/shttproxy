@@ -1,10 +1,6 @@
 static const char *host      = "localhost";
 static const char *port      = "80";
 static const char *servedir  = ".";
-static const char *docindex  = "index.html";
-static int         listdirs  = 1;
-static const char *user      = "nobody";
-static const char *group     = "nogroup";
 static const int   maxnprocs = 512;
 
 #define HEADER_MAX 4096
