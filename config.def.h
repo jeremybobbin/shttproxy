@@ -1,6 +1,5 @@
 static const char *host      = "localhost";
 static const char *port      = "80";
-static const char *servedir  = ".";
 static const int   maxnprocs = 512;
 
 #define HEADER_MAX 4096

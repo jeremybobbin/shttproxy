@@ -8,7 +8,6 @@
 
 #include <arpa/inet.h>
 #include <ctype.h>
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
@@ -625,8 +624,7 @@ getusock(char *udsname)
 static void
 usage(void)
 {
-	die("usage: %s [-v] [[[-h host] [-p port]] | [-U udsocket]] "
-	    "[-d dir] [-l] [-L]\n", argv0);
+	die("usage: %s [-v] [[[-h host] [-p port]] | [-U udsocket]]\n", argv0);
 }
 
 int
@@ -637,9 +635,6 @@ main(int argc, char *argv[])
 	char *udsname = NULL;
 
 	ARGBEGIN {
-	case 'd':
-		servedir = EARGF(usage());
-		break;
 	case 'h':
 		host = EARGF(usage());
 		break;
@@ -687,11 +682,6 @@ main(int argc, char *argv[])
 
 	/* bind socket */
 	insock = udsname ? getusock(udsname) : getipsock();
-
-	/* chroot */
-	if (servedir && chdir(servedir) < 0) {
-		die("%s: chdir %s: %s\n", argv0, servedir, strerror(errno));
-	}
 
 	serve(insock);
 	close(insock);

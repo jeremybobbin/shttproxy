@@ -14,9 +14,6 @@
 |
 .Op Fl U Ar udsocket
 .Oc
-.Op Fl d Ar dir
-.Op Fl l
-.Op Fl L
 .Op Fl u Ar user
 .Op Fl g Ar group
 .Sh DESCRIPTION
@@ -25,18 +22,6 @@ is a simple HTTP GET only web server that can be multiplexed using
 UNIX-domain sockets.
 .Sh OPTIONS
 .Bl -tag -width Ds
-.It Fl d Ar dir
-Serve
-.Ar dir
-after chrooting into it.
-.It Fl l
-Disable directory listing.
-.It Fl L
-Enable directory listing.
-.It Fl g Ar group
-Set group ID to the ID of
-.Ar group
-when dropping privileges.
 .It Fl h Ar host
 Use
 .Ar host
@@ -45,10 +30,6 @@ as the server hostname.
 Listen on port
 .Ar port
 for incoming connections.
-.It Fl u Ar user
-Set user ID to the ID of
-.Ar user
-when dropping privileges.
 .It Fl U Ar udsocket
 Create the UNIX-domain socket
 .Ar udsocket
