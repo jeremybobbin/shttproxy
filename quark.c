@@ -35,6 +35,8 @@ char *argv0, header[HEADER_MAX];
 
 #undef MIN
 #define MIN(x,y)  ((x) < (y) ? (x) : (y))
+#undef MAX
+#define MAX(x,y)  ((x) > (y) ? (x) : (y))
 
 #define TIMESTAMP_LEN 30
 
@@ -53,12 +55,14 @@ static char *req_field_str[] = {
 
 enum req_method {
 	M_GET,
+	M_POST,
 	M_HEAD,
 	NUM_REQ_METHODS,
 };
 
 static char *req_method_str[] = {
 	[M_GET]  = "GET",
+	[M_POST] = "POST",
 	[M_HEAD] = "HEAD",
 };
 
@@ -160,7 +164,7 @@ getrequest(int fd, struct request *r)
 {
 	size_t i, mlen;
 	ssize_t off;
-	char *p, *q;
+	char *p, *q, *bp;
 
 	/* empty all fields */
 	memset(r, 0, sizeof(*r));
@@ -168,20 +172,21 @@ getrequest(int fd, struct request *r)
 	/*
 	 * receive header
 	 */
-	for (hlen = 0; ;) {
+	for (hlen = 0, bp = header; ;) {
 		if ((off = read(fd, header + hlen, sizeof(header) - hlen)) < 0) {
 			return sendstatus(fd, S_REQUEST_TIMEOUT);
 		} else if (off == 0) {
 			break;
 		}
 		hlen += off;
-		if (hlen >= 4 && !memcmp(header + hlen - 4, "\r\n\r\n", 4)) {
+		/* body pointer */
+		if ((bp = strstr(header, "\r\n\r\n")+4)) {
 			break;
-		}
-		if (hlen == sizeof(header)) {
+		} else if (hlen == sizeof(header)) {
 			return sendstatus(fd, S_REQUEST_TOO_LARGE);
 		}
 	}
+
 
 	/* remove terminating empty line */
 	if (hlen < 2) {
@@ -254,7 +259,7 @@ getrequest(int fd, struct request *r)
 	 */
 
 	/* match field type */
-	for (; *p != '\0';) {
+	while (p < bp) {
 		for (i = 0; i < NUM_REQ_FIELDS; i++) {
 			if (!strncasecmp(p, req_field_str[i],
 			                 strlen(req_field_str[i]))) {
@@ -357,10 +362,10 @@ open_remote_host(char *host, int port)
 	return s;
 }
 
-
 static enum status
 proxy(int fd, struct request *r)
 {
+	enum status status = S_OK;
 	size_t i, bread, bwritten;
 	int sfd, port = -1;
 	static char buf[BUFSIZ];
@@ -384,6 +389,7 @@ proxy(int fd, struct request *r)
 		return sendstatus(fd, S_INTERNAL_SERVER_ERROR);
 	}
 
+	/* write data from header buffer to server */
 	p = header;
 	while (hlen > 0) {
 		if ((bwritten = write(sfd, p, hlen)) <= 0) {
@@ -393,23 +399,62 @@ proxy(int fd, struct request *r)
 		p += bwritten;
 	}
 
-	while ((bread = read(sfd, buf, sizeof(buf)))) {
-		if (bread < 0) {
-			return S_INTERNAL_SERVER_ERROR;
+	fd_set fds;
+	int maxfd = MAX(fd, sfd);
+	while (1) {
+		FD_ZERO(&fds);
+		FD_SET(fd, &fds);
+		FD_SET(sfd, &fds);
+		if (select(maxfd+1, &fds, 0, 0, NULL) <= 0) {
+			status = S_INTERNAL_SERVER_ERROR;
+			break;
 		}
-		p = buf;
-		while (bread > 0) {
-			bwritten = write(fd, p, bread);
-			if (bwritten <= 0) {
-				return S_REQUEST_TIMEOUT;
+
+		if (FD_ISSET(sfd, &fds)) {
+			if ((bread = read(sfd, buf, sizeof(buf))) > 0) {
+				if (bread < 0) {
+				}
+				p = buf;
+				while (bread > 0) {
+					bwritten = write(fd, p, bread);
+					if (bwritten <= 0) {
+						return S_REQUEST_TIMEOUT;
+					}
+					bread -= bwritten;
+					p += bwritten;
+				}
+			} else if (bread == 0) {
+				close(sfd);
+			} else if (bread < 0) {
+				close(sfd);
+				status = S_INTERNAL_SERVER_ERROR;
 			}
-			bread -= bwritten;
-			p += bwritten;
+		}
+
+		if (FD_ISSET(fd, &fds)) {
+			if ((bread = read(fd, buf, sizeof(buf))) > 0) {
+				if (bread < 0) {
+					close(fd);
+					return S_INTERNAL_SERVER_ERROR;
+				}
+				p = buf;
+				while (bread > 0) {
+					bwritten = write(sfd, p, bread);
+					if (bwritten <= 0) {
+						return S_REQUEST_TIMEOUT;
+					}
+					bread -= bwritten;
+					p += bwritten;
+				}
+			} else if (bread == 0) {
+				close(fd);
+			} else if (bread < 0) {
+				close(fd);
+				status = S_INTERNAL_SERVER_ERROR;
+			}
 		}
 	}
-	close(fd);
-	close(sfd);
-	return S_OK;
+	return status;
 }
 
 static void
