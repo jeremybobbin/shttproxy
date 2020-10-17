@@ -6,8 +6,8 @@ include config.mk
 
 all: shttproxy
 
-shttproxy: quark.c arg.h config.h config.mk
-	$(CC) -o $@ $(CPPFLAGS) $(CFLAGS) quark.c $(LDFLAGS)
+shttproxy: shttproxy.c arg.h config.h config.mk
+	$(CC) -o $@ $(CPPFLAGS) $(CFLAGS) shttproxy.c $(LDFLAGS)
 
 config.h:
 	cp config.def.h $@
