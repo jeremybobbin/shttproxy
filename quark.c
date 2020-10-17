@@ -47,6 +47,8 @@ enum req_field {
 
 static char *req_field_str[] = {
 	[REQ_HOST]    = "Host",
+	[REQ_RANGE]   = "Range",
+	[REQ_MOD]     = "If-Modified-Since",
 };
 
 enum req_method {
@@ -324,31 +326,25 @@ int
 open_remote_host(char *host, int port)
 {
 	struct sockaddr_in rem_addr;
-	int len, fl, s, x;
-	struct hostent *H;
+	int fl, s;
+	struct hostent *hent;
 	int on = 1;
 
-	H = gethostbyname(host);
+	if ((hent = gethostbyname(host)) == NULL)
+		return -1;
 
-	if (!H)
-		return (-2);
-
-	len = sizeof(rem_addr);
-
-	s = socket(AF_INET, SOCK_STREAM, 0);
-	if (s < 0)
+	if ((s = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 		return s;
 
 	setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &on, 4);
 
-	len = sizeof(rem_addr);
-	memset(&rem_addr, '\0', len);
+	memset(&rem_addr, '\0', sizeof(rem_addr));
 	rem_addr.sin_family = AF_INET;
-	memcpy(&rem_addr.sin_addr, H->h_addr, H->h_length);
+	memcpy(&rem_addr.sin_addr, hent->h_addr, hent->h_length);
 	rem_addr.sin_port = htons(port);
-	if ((x = connect(s, (struct sockaddr *) &rem_addr, len))) {
+	if (connect(s, (struct sockaddr *) &rem_addr, sizeof(rem_addr)) != 0) {
 		close(s);
-		return x;
+		return -1;
 	}
 	if ((fl = fcntl(s, F_GETFL, 0)) < 0) {
 		fprintf(stderr, "%s: fcntl GETFL: %s\n", argv0, strerror(errno));
@@ -358,7 +354,6 @@ open_remote_host(char *host, int port)
 		fprintf(stderr, "%s: fcntl SETFL: %s\n", argv0, strerror(errno));
 		exit(1);
 	}
-
 	return s;
 }
 
@@ -367,7 +362,7 @@ static enum status
 proxy(int fd, struct request *r)
 {
 	size_t i, bread, bwritten;
-	int sfd, port;
+	int sfd, port = -1;
 	static char buf[BUFSIZ];
 	char *p;
 
@@ -391,8 +386,9 @@ proxy(int fd, struct request *r)
 
 	p = header;
 	while (hlen > 0) {
-		if ((bwritten = write(sfd, p, hlen)) <= 0)
+		if ((bwritten = write(sfd, p, hlen)) <= 0) {
 			return sendstatus(fd, S_INTERNAL_SERVER_ERROR);
+		}
 		hlen -= bwritten;
 		p += bwritten;
 	}
@@ -413,7 +409,7 @@ proxy(int fd, struct request *r)
 	}
 	close(fd);
 	close(sfd);
-	return 200;
+	return S_OK;
 }
 
 static void
