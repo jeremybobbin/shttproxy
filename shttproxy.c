@@ -55,6 +55,7 @@ static char *req_field_str[] = {
 enum req_method {
 	M_GET,
 	M_POST,
+	M_PUT,
 	M_HEAD,
 	NUM_REQ_METHODS,
 };
@@ -62,6 +63,7 @@ enum req_method {
 static char *req_method_str[] = {
 	[M_GET]  = "GET",
 	[M_POST] = "POST",
+	[M_PUT]  = "PUT",
 	[M_HEAD] = "HEAD",
 };
 
